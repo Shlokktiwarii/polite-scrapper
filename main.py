@@ -1,11 +1,13 @@
 from pathlib import Path
+from urllib.parse import urljoin
 import httpx
+from bs4 import BeautifulSoup
 from fastapi import  FastAPI, HTTPException , Request 
 
 app = FastAPI(title="API for fetching data from a URL")
 
-URL = "https://books.toscrape.com/"
-CACHE_FILE = Path("cache/catalogue-page-1.html")
+BASE_URL = "https://books.toscrape.com/"
+CACHE_DIR = Path("cache")
 
 HEADERS = {
     "User-Agent": (
@@ -14,49 +16,82 @@ HEADERS = {
     )
 }
 
-@app.get("/")
-def home():
-    return {"message": "Books Scraper API is running"}
+def get_book_links(html: str, page_url: str) -> list[str]:
+    soup = BeautifulSoup(html, "html.parser")\
 
-@app.get("/scrape")
-async def scrape_first_page():
-    try:
-        async with httpx.AsyncClient(
-            headers=HEADERS,
-            timeout=10.0
-        ) as client:
+    book_urls = []
 
-            response = await client.get(URL)
+    for link in soup.select("article.product_pod h3 a"):
+        href = link.get("href")
 
-        # Checking status before doing anything with the HTML
-        if response.status_code != 200:
-            raise HTTPException(
-                status_code=response.status_code,
-                detail="Failed to fetch catalogue page"
-            )
-        # Creating cache directory
-        CACHE_FILE.parent.mkdir(parents=True, exist_ok=True)
+        if href:
+            absolute_url = urljoin(page_url, href)
+            book_urls.append(absolute_url)
 
-        # Saving the response
-        CACHE_FILE.write_text(
-            response.text,
-            encoding="utf-8"
-        )
-        return {
-            "status": "success",
-            "status_code": response.status_code,
-            "cached_file": str(CACHE_FILE)
-        }
-    except httpx.TimeoutException:
-        raise HTTPException(
-            status_code=504,
-            detail="Request timed out"
-        )
+    return book_urls
 
-    except httpx.RequestError as error:
-        raise HTTPException(
-            status_code=502,
-            detail=f"Request failed: {error}"
-        )
-        
-        
+
+def get_next_page(html: str, page_url: str) -> str | None:
+    soup = BeautifulSoup(html, "html.parser")
+
+    next_link = soup.select_one("li.next a")
+
+    if not next_link:
+        return None
+
+    href = next_link.get("href")
+
+    if not href:
+        return None
+
+    return urljoin(page_url, href)
+
+
+@app.get("/discover")
+def discover_books():
+
+    catalogue_pages = 0
+    discovered_urls = []
+
+    current_url = BASE_URL
+
+    while catalogue_pages < 3:
+
+        catalogue_pages += 1
+
+        # Page 1 comes from the cache
+        if catalogue_pages == 1:
+            cache_file = CACHE_DIR / "catalogue-page-1.html"
+
+            if not cache_file.exists():
+                return {
+                    "error": "Run Stage 1 first. "
+                             "catalogue-page-1.html not found."
+                }
+
+            html = cache_file.read_text(encoding="utf-8")
+
+        else:
+            # Stage 2 will later fetch/cache pages 2 and 3
+            # For now, this keeps the structure ready.
+            break
+
+        book_urls = get_book_links(html, current_url)
+
+        discovered_urls.extend(book_urls)
+
+        next_url = get_next_page(html, current_url)
+
+        if not next_url:
+            break
+
+        current_url = next_url
+
+    unique_urls = list(dict.fromkeys(discovered_urls))
+
+    return {
+        "catalogue_pages": catalogue_pages,
+        "discovered": len(discovered_urls),
+        "unique_urls": len(unique_urls),
+        "book_urls": unique_urls,
+    }
