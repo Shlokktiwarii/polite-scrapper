@@ -1,12 +1,16 @@
 import asyncio
+import json
 from datetime import datetime, timezone
 from pathlib import Path
 from urllib.parse import urljoin
 import hashlib
+import re
 
 import httpx
 from bs4 import BeautifulSoup
 from fastapi import FastAPI, HTTPException
+from pydantic import BaseModel, HttpUrl, ValidationError
+
 
 
 app = FastAPI(title="Books to Scrape API")
@@ -15,6 +19,9 @@ app = FastAPI(title="Books to Scrape API")
 BASE_URL = "https://books.toscrape.com/"
 CACHE_DIR = Path("cache")
 DETAIL_CACHE_DIR = CACHE_DIR / "books"
+OUTPUT_DIR = Path("output")
+BOOKS_FILE = OUTPUT_DIR / "books.json"
+ERRORS_FILE = OUTPUT_DIR / "errors.json"
 
 USER_AGENT = (
     "Books to Scrape API"
@@ -25,13 +32,26 @@ HEADERS = {
     "User-Agent": USER_AGENT
 }
 
-TIMEOUT = 10.0
+TIMEOUT = 12.0
 REQUEST_DELAY = 0.5
 
+class BookRecord(BaseModel):
+    title: str
+    product_url: HttpUrl
 
-# ---------------------------------------------------------
+    price_text: str
+    price_gbp: float
+
+    availability_text: str
+    rating_text: str | None
+
+    description: str | None
+
+    source_page: HttpUrl
+    fetched_at: str
+
+
 # Utility functions
-# ---------------------------------------------------------
 
 def cache_filename(url: str) -> str:
     """
@@ -273,6 +293,117 @@ def extract_book(
         "fetched_at": fetched_at
     }
 
+def normalize_price(
+    price_text: str
+) -> float:
+
+    # £51.77 -> 51.77
+    match = re.search(
+        r"(\d+(?:\.\d+)?)",
+        price_text
+    )
+
+    if not match:
+        raise ValueError(
+            f"Could not parse price: {price_text}"
+        )
+
+    return float(match.group(1))
+
+
+def normalize_record(
+    raw_record: dict
+) -> dict:
+
+    normalized = raw_record.copy()
+
+    normalized["price_gbp"] = normalize_price(
+        raw_record["price_text"]
+    )
+
+    return normalized
+
+def save_json(
+    path: Path,
+    data
+):
+
+    OUTPUT_DIR.mkdir(
+        parents=True,
+        exist_ok=True
+    )
+
+    path.write_text(
+        json.dumps(
+            data,
+            indent=2,
+            ensure_ascii=False
+        ),
+        encoding="utf-8"
+    )
+
+
+def validate_and_store(
+    raw_records: list[dict]
+):
+
+    valid_records = []
+    errors = []
+
+    seen_urls = set()
+
+    for raw_record in raw_records:
+
+        try:
+
+            normalized = normalize_record(
+                raw_record
+            )
+
+            validated = BookRecord.model_validate(
+                normalized
+            )
+
+            url = str(
+                validated.product_url
+            )
+
+            # Canonical URL is the identity
+            if url in seen_urls:
+                continue
+
+            seen_urls.add(url)
+
+            valid_records.append(
+                validated.model_dump(
+                    mode="json"
+                )
+            )
+
+        except (
+            ValueError,
+            ValidationError
+        ) as error:
+
+            errors.append(
+                {
+                    "record": raw_record,
+                    "reason": str(error)
+                }
+            )
+
+    save_json(
+        BOOKS_FILE,
+        valid_records
+    )
+
+    save_json(
+        ERRORS_FILE,
+        errors
+    )
+
+    return valid_records, errors
+
 # FastAPI endpoints
 
 
@@ -385,7 +516,12 @@ async def extract_books():
 
             records.append(record)
 
+    valid_records, errors = validate_and_store(records)
+
     return {
         "detail_pages": len(records),
-        "records": records
+         "valid_records": len(valid_records),
+         "invalid_records": len(errors),
+         "books_file": str(BOOKS_FILE),
+         "errors_file": str(ERRORS_FILE)
     }
