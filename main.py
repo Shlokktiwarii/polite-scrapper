@@ -22,10 +22,11 @@ DETAIL_CACHE_DIR = CACHE_DIR / "books"
 OUTPUT_DIR = Path("output")
 BOOKS_FILE = OUTPUT_DIR / "books.json"
 ERRORS_FILE = OUTPUT_DIR / "errors.json"
+FAILED_PAGES_FILE = OUTPUT_DIR / "failed_pages.json"
 
 USER_AGENT = (
     "Books to Scrape API"
-    "(+https://github.com/Shlok Tiwari/shlokktiwarii)"
+    "(+https://github.com/Shlok_Tiwari/shlokktiwarii)"
 )
 
 HEADERS = {
@@ -448,6 +449,7 @@ async def extract_books():
     )
 
     records = []
+    failed_pages=[]
 
     async with httpx.AsyncClient(
         headers=HEADERS,
@@ -473,55 +475,62 @@ async def extract_books():
                 source_page_index
             ]
 
-            cache_file = (
-                DETAIL_CACHE_DIR
-                / cache_filename(product_url)
-            )
-
-            # -----------------------------------------
+        
             # Read cached detail page
-            # -----------------------------------------
 
-            if cache_file.exists():
 
-                html = cache_file.read_text(
-                    encoding="utf-8"
-                )
+            try:
+               cache_file = (
+                   DETAIL_CACHE_DIR
+                   / cache_filename(product_url)
+               )
 
-            # -----------------------------------------
-            # Otherwise make real request
-            # -----------------------------------------
+               if cache_file.exists():
+                   html = cache_file.read_text(
+                       encoding="utf-8"
+                   )
+               else:
+                   html = await fetch_page(
+                       client,
+                       product_url
+                   )
 
-            else:
+                   cache_file.write_text(
+                       html,
+                       encoding="utf-8"
+                   )
 
-                html = await fetch_page(
-                    client,
-                    product_url
-                )
+               # Extracting raw record
+               record = extract_book(
+                   html,
+                   product_url,
+                   source_page
+               )
 
-                cache_file.write_text(
-                    html,
-                    encoding="utf-8"
-                )
+               records.append(record)
 
-            
-            # Extracting raw record
-            
-
-            record = extract_book(
-                html,
-                product_url,
-                source_page
-            )
-
-            records.append(record)
-
+            except Exception as error:
+               failed_pages.append({
+                   "url": product_url,
+                   "reason": str(error)
+               })
+               continue
     valid_records, errors = validate_and_store(records)
+    save_json(
+        ERRORS_FILE,
+        errors
+    )
+    save_json(
+        FAILED_PAGES_FILE,
+        failed_pages
+    )
 
     return {
         "detail_pages": len(records),
-         "valid_records": len(valid_records),
-         "invalid_records": len(errors),
-         "books_file": str(BOOKS_FILE),
-         "errors_file": str(ERRORS_FILE)
+        "valid_records": len(valid_records),
+        "invalid_records": len(errors),
+        "books_file": str(BOOKS_FILE),
+        "errors_file": str(ERRORS_FILE),
+        "failed_pages_file": str(OUTPUT_DIR / "failed_pages.json"),
+        "failed_pages": failed_pages    
     }
