@@ -47,15 +47,15 @@ The project focuses on building a scraper that is:
 
 ### Swagger API
 
-![Swagger API](screenshots/swagger.png)
+![Swagger API](images/swagger.png)
 
 ### Successful Extraction
 
-![Successful Extraction](screenshots/output.png)
+![Successful Extraction](images/output.png)
 
 ### Failure Handling
 
-![Failure Handling](screenshots/run-report.png)
+![Failure Handling](images/run-report.png)
 
 > Screenshots demonstrate the API, successful extraction, and the
 > intentionally failed page used to verify error handling.
