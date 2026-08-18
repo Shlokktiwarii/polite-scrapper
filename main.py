@@ -1,11 +1,11 @@
 import asyncio
 import json
-from datetime import datetime, timezone
 from pathlib import Path
 from urllib.parse import urljoin
 import hashlib
 import re
-
+import time 
+from datetime import datetime, timezone
 import httpx
 from bs4 import BeautifulSoup
 from fastapi import FastAPI, HTTPException
@@ -23,6 +23,7 @@ OUTPUT_DIR = Path("output")
 BOOKS_FILE = OUTPUT_DIR / "books.json"
 ERRORS_FILE = OUTPUT_DIR / "errors.json"
 FAILED_PAGES_FILE = OUTPUT_DIR / "failed_pages.json"
+RUN_REPORT_FILE = OUTPUT_DIR / "run_report.json"
 
 USER_AGENT = (
     "Books to Scrape API"
@@ -192,8 +193,29 @@ async def discover_catalogue_pages():
 
     return catalogue_pages, unique_urls
 
+def write_time_report(start_time: float, pages_fetched: int, cache_hits: int, valid_records: int, invalid_records: int, failed_pages: int, file_path: Path):
+    """Write a run report JSON file containing timing and counters.
 
-#Extacting book details
+    start_time: the perf_counter() value recorded at start
+    pages_fetched, cache_hits, valid_records, invalid_records, failed_pages: integer metrics
+    file_path: destination Path for the report
+    """
+    duration = round(time.perf_counter() - start_time, 2)
+
+    report = {
+        "start_time": datetime.now(timezone.utc).isoformat(),
+        "duration_seconds": duration,
+        "pages_fetched": pages_fetched,
+        "cache_hits": cache_hits,
+        "valid_records": valid_records,
+        "invalid_records": invalid_records,
+        "failed_pages": failed_pages,
+    }
+
+    file_path.write_text(
+        json.dumps(report, indent=2),
+        encoding="utf-8"
+    )
 
 
 def extract_book(
@@ -433,10 +455,13 @@ async def discover():
 
 @app.get("/extract")
 async def extract_books():
-
+    start_time = time.perf_counter()
+    pages_fetched = 0
+    cache_hits = 0
     catalogue_pages, unique_urls = (
         await discover_catalogue_pages()
     )
+    unique_urls.append("https://books.toscrape.com/catalogue/this-book-does-not-exist_9999/index.html")
 
     CACHE_DIR.mkdir(
         parents=True,
@@ -460,6 +485,7 @@ async def extract_books():
             unique_urls,
             start=1
         ):
+            pages_fetched += 1
 
             # Determine catalogue source page
             source_page_index = (
@@ -516,6 +542,16 @@ async def extract_books():
                })
                continue
     valid_records, errors = validate_and_store(records)
+
+    write_time_report(
+        start_time,
+        pages_fetched,
+        cache_hits,
+        len(valid_records),
+        len(errors),
+        len(failed_pages),
+        RUN_REPORT_FILE
+    )
     save_json(
         ERRORS_FILE,
         errors
@@ -531,6 +567,6 @@ async def extract_books():
         "invalid_records": len(errors),
         "books_file": str(BOOKS_FILE),
         "errors_file": str(ERRORS_FILE),
-        "failed_pages_file": str(OUTPUT_DIR / "failed_pages.json"),
-        "failed_pages": failed_pages    
+        "failed_pages": failed_pages,
+        "run_report": str(RUN_REPORT_FILE),
     }

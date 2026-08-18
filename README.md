@@ -1,69 +1,91 @@
-# Books to Scrape — Scraper
+# 📚 Books to Scrape — Async Web Scraper
 
-### Target
+## 🎯 Project Goal
 
-**Website:** Books to Scrape  
-**URL:** https://books.toscrape.com/
+The goal of this project is to build a scraper that can:
 
-Books to Scrape is a sandbox website specifically created for practicing web scraping. The website states that it is a safe environment for people to learn and practice scraping.
+- Discover book URLs from the catalogue
+- Fetch book pages asynchronously
+- Extract structured book information
+- Cache downloaded pages
+- Handle individual page failures without stopping the entire run
+- Validate extracted records
+- Store invalid records separately
+- Report failed pages
+- Generate a run report containing useful execution statistics
 
-### Why this site?
+The scraper is designed to be polite to the target website by using a
+custom User-Agent, request delays, timeouts, and local caching.
 
-I selected Books to Scrape because it is explicitly designed for scraping practice. This makes it an appropriate and permitted target for this internship assignment.
+---
 
-### Scope
+The project focuses on building a scraper that is:
 
-The scraper will collect data from **only the first 3 catalogue pages**.
+- ⚡ Asynchronous
+- 🛡️ Failure-tolerant
+- 💾 Cache-aware
+- ✅ Validation-based
+- 📊 Observable through run reports
+- 🤝 Polite to the target website
 
-The scraper will not crawl the entire website or follow unrelated links.
+---
 
-### Robots.txt
+## 🛠️ Tech Stack
 
-I checked:
+- Python 3.12+
+- FastAPI
+- Uvicorn
+- httpx
+- BeautifulSoup
+- Pydantic
+- JSON
+- AsyncIO
 
-https://books.toscrape.com/robots.txt
+---
 
-**Result:** No robots.txt file was found.
+## 📸 Project Preview
 
-Therefore, there is no robots.txt file providing additional crawling instructions for this site.
+### Swagger API
 
-> A missing robots.txt file is not treated as permission by itself. The site's explicit statement that it is a sandbox for practicing scraping is the basis for selecting this target.
+![Swagger API](screenshots/swagger.png)
 
-### Data to Collect
+### Successful Extraction
 
-For each book, the scraper will collect:
+![Successful Extraction](screenshots/output.png)
 
-- Book title
-- Price
-- Availability
-- Rating
-- Book URL
+### Failure Handling
 
-Only publicly available catalogue information will be collected.
+![Failure Handling](screenshots/run-report.png)
 
-### Why is this data appropriate?
+> Screenshots demonstrate the API, successful extraction, and the
+> intentionally failed page used to verify error handling.
 
-This data is directly displayed on the catalogue pages and is necessary for demonstrating basic web scraping, parsing, and data extraction without collecting personal or sensitive information.
+---
 
-## Scraping Rules
-
-This scraper follows these rules:
-
-1. Only the first 3 catalogue pages are scraped.
-2. A request timeout is used.
-3. The HTTP status code is checked before parsing the response.
-4. The downloaded pages are cached locally.
-5. The cached copies are used during development instead of repeatedly requesting the website.
-6. The scraper identifies itself using a descriptive User-Agent.
-7. This code will not be reused on another site without checking that site's rules and terms first.
-
-## Project Structure
+Expected behaviour:
 
 ```text
-scraper/
-├── README.md
-├── .gitignore
-├── src/
-│   └── main.py
-└── cache/
-    └── catalogue-page-1.html
+Catalogue
+    ↓
+Discover book URLs
+    ↓
+Fetch pages asynchronously
+    ↓
+Extract records
+    ↓
+Validate records
+    ↓
+ ┌───────────────┐
+ │               │
+Valid          Invalid
+ │               │
+ ↓               ↓
+books.json    errors.json
+
+Failed requests
+       ↓
+failed_pages.json
+
+Entire run
+       ↓
+run-report.json
